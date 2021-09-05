@@ -129,7 +129,7 @@ node *new_node(int k)
 
 node *paren_expr(); /* forward declaration */
 
-node *term()  /* <term> ::= <id> | <int> | <paren_expr> */
+node *term()  /* <term> ::= [ "-" ] ( <id> | <int> | <paren_expr> ) */
 { node *x;
   if (sym == MINUS) { x=new_node(SUB); x->o1=new_node(CST); x->o1->val=0;
                       next_sym(); x->o2=term(); }
