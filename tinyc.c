@@ -27,9 +27,9 @@
  *  <expr> ::= <test> | <id> "=" <expr>
  *  <test> ::= <sum> | <sum> "<" <sum>
  *  <sum> ::= <term> | <sum> "+" <term> | <sum> "-" <term>
- *  <term> ::= <id> | <int> | <paren_expr>
+ *  <term> ::= [ "-" ] ( <id> | <uint> | <paren_expr> )
  *  <id> ::= "a" | "b" | "c" | "d" | ... | "z"
- *  <int> ::= <an_unsigned_decimal_integer>
+ *  <uint> ::= <0..127>
  *
  * Here are a few invocations of the compiler:
  *
@@ -37,7 +37,7 @@
  * a = 1
  * b = 1
  * c = 1
- * % echo "{ i=1; while (i<100) i=i+i; }" | ./a.out
+ * % echo "{ i=1; while (i<100) i=i+1; }" | ./a.out
  * i = 100
  * % echo "{ i=125; j=100; while (i-j) if (i<j) j=j-i; else i=i-j; }" | ./a.out
  * i = 25
@@ -62,7 +62,7 @@
 /**********/
 
 enum { DO_SYM, ELSE_SYM, IF_SYM, WHILE_SYM, LBRA, RBRA, LPAR, RPAR,
-       PLUS, MINUS, LESS, SEMI, EQUAL, INT, ID, EOI };
+       PLUS, MINUS, LESS, SEMI, EQUAL, UINT, ID, EOI };
 
 char *words[] = { "do", "else", "if", "while", NULL };
 
@@ -90,10 +90,11 @@ void next_sym()
       case '=': next_ch(); sym = EQUAL; break;
       default:
         if (ch >= '0' && ch <= '9')
-          { int_val = 0; /* missing overflow check */
+          { int_val = 0;
             while (ch >= '0' && ch <= '9')
               { int_val = int_val*10 + (ch - '0'); next_ch(); }
-            sym = INT;
+            if (int_val > 127) syntax_error();
+            sym = UINT;
           }
         else if (ch >= 'a' && ch <= 'z')
           { int i = 0; /* missing overflow check */
@@ -130,8 +131,10 @@ node *paren_expr(); /* forward declaration */
 
 node *term()  /* <term> ::= <id> | <int> | <paren_expr> */
 { node *x;
-  if (sym == ID) { x=new_node(VAR); x->val=id_name[0]-'a'; next_sym(); }
-  else if (sym == INT) { x=new_node(CST); x->val=int_val; next_sym(); }
+  if (sym == MINUS) { x=new_node(SUB); x->o1=new_node(CST); x->o1->val=0;
+                      next_sym(); x->o2=term(); }
+  else if (sym == ID) { x=new_node(VAR); x->val=id_name[0]-'a'; next_sym(); }
+  else if (sym == UINT) { x=new_node(CST); x->val=int_val; next_sym(); }
   else x = paren_expr();
   return x;
 }
@@ -224,10 +227,13 @@ node *program()  /* <program> ::= <statement> */
 /* Code generator. */
 /*******************/
 
-enum { IFETCH=128, ISTORE, IPUSH, IPOP, IADD, ISUB, ILT, JZ, JNZ, JMP, HALT };
+enum { IFETCH=-1, ISTORE=-2, IPUSH=-3, IPOP=-4, IADD=-5,
+       ISUB=-6, ILT=-7, JZ=-8, JNZ=-9, JMP=-10, HALT=-11 };
+const char *opName[] = { "IFETCH", "ISTORE", "IPUSH", "IPOP", "IADD",
+                         "ISUB", "ILT", "JZ", "JNZ", "JMP", "HALT" };
 
 typedef signed char code;
-code object[1000], *here = object;
+code object[1000], *here = object; /* Instruction memory */
 
 void g(code c) { *here++ = c; } /* missing overflow check */
 code *hole() { return here++; }
@@ -263,14 +269,17 @@ void c(node *x)
 
 /* Virtual machine. */
 
+/* Data memory */
 int globals[26];
+int stack[1000];
 
 /********************************/
 /* execute assembled code on VM */
 /********************************/
 
 void run()
-{ int stack[1000], *sp = stack;
+{
+  int  *sp = stack;
   code *pc = object;
   again: switch (*pc++)
     { case IFETCH: *sp++ = globals[*pc++];               goto again;
@@ -283,6 +292,7 @@ void run()
       case JMP   : pc += *pc;                            goto again;
       case JZ    : if (*--sp == 0) pc += *pc; else pc++; goto again;
       case JNZ   : if (*--sp != 0) pc += *pc; else pc++; goto again;
+      case HALT  : break;
     }
 }
 
@@ -294,6 +304,19 @@ int main()
 { int i;
 
   c(program());
+
+  printf("\n");
+  for (code *pc = object; pc<here ; ++pc) {
+    printf("%d ", pc-object) ;
+    if ((*pc <= IFETCH) && (*pc >= HALT)) {
+       printf("%s\n", opName[-*pc-1]) ;
+    }
+    else {
+       printf("%d\n", *pc) ;
+    }
+  }
+  printf("\n");
+
   for (i=0; i<26; i++)
     globals[i] = 0;
   run();
