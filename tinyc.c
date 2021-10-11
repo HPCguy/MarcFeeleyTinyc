@@ -29,7 +29,7 @@
  *  <sum> ::= <term> | <sum> "+" <term> | <sum> "-" <term>
  *  <term> ::= [ "-" ] ( <id> | <uint> | <paren_expr> )
  *  <id> ::= "a" | "b" | "c" | "d" | ... | "z"
- *  <uint> ::= <0..127>
+ *  <uint> ::= <0..2147483647>
  *
  * Here are a few invocations of the compiler:
  *
@@ -93,7 +93,7 @@ void next_sym()
           { int_val = 0;
             while (ch >= '0' && ch <= '9')
               { int_val = int_val*10 + (ch - '0'); next_ch(); }
-            if (int_val > 127) syntax_error();
+            if (int_val < 0) syntax_error();
             sym = UINT;
           }
         else if (ch >= 'a' && ch <= 'z')
@@ -239,9 +239,9 @@ void g(code c) { *here++ = c; } /* missing overflow check */
 code *hole() { return here++; }
 void fix(code *src, code *dst) { *src = dst-src; } /* missing overflow check */
 
-/******************************************/
-/* generate assembly language for backend */
-/******************************************/
+/***********************************************/
+/* generate assembly language (IR) for backend */
+/***********************************************/
 
 void c(node *x)
 { code *p1, *p2;
@@ -273,9 +273,9 @@ void c(node *x)
 int globals[26];
 int stack[1000];
 
-/********************************/
-/* execute assembled code on VM */
-/********************************/
+/*************************************/
+/* execute assembled code (IR) on VM */
+/*************************************/
 
 void run()
 {
@@ -305,7 +305,7 @@ int main()
 
   c(program());
 
-  printf("\n");
+  printf("Intermediate Representation of program:\n");
   for (code *pc = object; pc<here ; ++pc) {
     printf("%d ", pc-object) ;
     if ((*pc <= IFETCH) && (*pc >= HALT)) {
